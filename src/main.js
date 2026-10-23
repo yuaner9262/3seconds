@@ -1,6 +1,6 @@
 import './style.css';
 import { story } from './story.js';
-import { zoomAt, layerFrames } from './camera.js';
+import { cameraOnPath, layerFrames } from './camera.js';
 const frames = layerFrames(story);
 document.querySelector('#app').innerHTML = `
 <main id="stage" aria-label="交互叙事画布，可滚动缩放、拖动平移" tabindex="0"><div id="world"></div><output id="scene-name" class="sr-only" aria-live="polite">隔岸</output></main>
@@ -16,26 +16,40 @@ frames.forEach((f,i)=> {
  image.addEventListener('error',()=>{el.classList.add('asset-error');const message=document.createElement('span');message.className='asset-message';message.textContent='画面暂时未能加载，请刷新重试';el.append(message);});
  world.append(el);
 });
-let camera={x:0,y:0,scale:1}, target={...camera}, level=0, fit=1, initialized=false;
-function size(){fit=Math.min(stage.clientWidth/story.width,stage.clientHeight/story.height);if(!initialized){target=frameCamera(0);camera={...target};initialized=true;}}
-function frameCamera(i){const f=frames[i];const s=fit*story.width/f.width*(i?f.portal?.targetScale||1:1);return {scale:s,x:stage.clientWidth/2-(f.x+f.width/2)*s,y:stage.clientHeight/2-(f.y+f.height/2)*s};}
-function go(i){target=frameCamera(Math.max(0,Math.min(frames.length-1,i)));}
-// Public input adapter: future gesture input calls the exact same camera methods.
-function zoom(factor, point={x:stage.clientWidth/2,y:stage.clientHeight/2}){target=zoomAt(target,factor,point,fit*.7,fit*story.width/frames.at(-1).width*3);}
-window.narrativeControls={zoom,go,reset:()=>go(0),pan:(x,y)=>{target.x+=x;target.y+=y;}};
-stage.addEventListener('wheel',e=>{e.preventDefault();const r=stage.getBoundingClientRect();zoom(Math.exp(-e.deltaY*(e.deltaMode===1?.035:.0018)),{x:e.clientX-r.left,y:e.clientY-r.top});},{passive:false});
+let progress=0, targetProgress=0, level=0;
+const pan={x:0,y:0}, targetPan={x:0,y:0};
+const viewport=()=>({width:stage.clientWidth,height:stage.clientHeight});
+function go(i){targetProgress=Math.max(0,Math.min(frames.length-1,i));targetPan.x=targetPan.y=0;}
+// Pointer, touch and future gestures all advance the same configured path.
+function zoom(factor){
+ if(!Number.isFinite(factor)||factor<=0)return;
+ targetProgress=Math.max(0,Math.min(frames.length-1,targetProgress+Math.log(factor)/Math.log(4)));
+ targetPan.x=targetPan.y=0;
+}
+function move(x,y){targetPan.x+=x;targetPan.y+=y;}
+window.narrativeControls={zoom,go,reset:()=>go(0),pan:move,getState:()=>({progress,targetProgress,level,camera:cameraOnPath(frames,progress,viewport())})};
+stage.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?stage.clientHeight:1);zoom(Math.exp(-delta*.0018));},{passive:false});
 let pointers=new Map(), drag=false, lastDistance=0;
 stage.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});stage.setPointerCapture(e.pointerId);drag=true;stage.classList.add('dragging');});
-stage.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;const prev=pointers.get(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const [a,b]=[...pointers.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);const r=stage.getBoundingClientRect();if(lastDistance)zoom(d/lastDistance,{x:(a.x+b.x)/2-r.left,y:(a.y+b.y)/2-r.top});lastDistance=d;}else if(drag){target.x+=e.clientX-prev.x;target.y+=e.clientY-prev.y;}});
+stage.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;const prev=pointers.get(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const [a,b]=[...pointers.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);if(lastDistance)zoom(d/lastDistance);lastDistance=d;}else if(drag){move(e.clientX-prev.x,e.clientY-prev.y);}});
 function release(e){pointers.delete(e.pointerId);lastDistance=0;drag=pointers.size>0;stage.classList.toggle('dragging',drag);}
 stage.addEventListener('pointerup',release);stage.addEventListener('pointercancel',release);
 
 document.querySelector('#reset').onclick=()=>go(0);
-window.addEventListener('keydown',e=>{if(['+','=','-','Home','Backspace','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault();if(e.key==='+'||e.key==='=')zoom(1.4);if(e.key==='-')zoom(1/1.4);if(e.key==='Home')go(0);if(e.key==='Backspace')go(level-1);if(e.key==='ArrowLeft')target.x+=60;if(e.key==='ArrowRight')target.x-=60;if(e.key==='ArrowUp')target.y+=60;if(e.key==='ArrowDown')target.y-=60;});
-new ResizeObserver(()=>{size();if(initialized)go(level);}).observe(stage);size();
+window.addEventListener('keydown',e=>{if(['+','=','-','Home','Backspace','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault();if(e.key==='+'||e.key==='=')zoom(1.4);if(e.key==='-')zoom(1/1.4);if(e.key==='Home')go(0);if(e.key==='Backspace')go(level-1);if(e.key==='ArrowLeft')move(60,0);if(e.key==='ArrowRight')move(-60,0);if(e.key==='ArrowUp')move(0,60);if(e.key==='ArrowDown')move(0,-60);});
 const reducedMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
 let previousTime=0;
-function animate(time){const dt=Math.min(64,time-previousTime||16);previousTime=time;const k=reducedMotion?1:1-Math.exp(-dt/95);for(const key of ['x','y','scale'])camera[key]+=(target[key]-camera[key])*k;world.style.transform=`translate(${camera.x}px,${camera.y}px) scale(${camera.scale})`;
- let next=0;for(let i=1;i<frames.length;i++){const f=frames[i];const cx=camera.x+(f.x+f.width/2)*camera.scale,cy=camera.y+(f.y+f.height/2)*camera.scale;if(camera.scale>=fit*story.width/f.width*.55&&Math.abs(cx-stage.clientWidth/2)<stage.clientWidth*.6&&Math.abs(cy-stage.clientHeight/2)<stage.clientHeight*.6)next=i;}
- level=next;document.querySelector('#scene-name').textContent=frames[level].title;document.querySelector('footer').hidden=level!==frames.length-1;requestAnimationFrame(animate);}
+function animate(time){
+ const dt=Math.min(64,time-previousTime||16);previousTime=time;
+ const k=reducedMotion?1:1-Math.exp(-dt/95);
+ progress+=(targetProgress-progress)*k;
+ if(Math.abs(progress-targetProgress)<.00001)progress=targetProgress;
+ pan.x+=(targetPan.x-pan.x)*k;pan.y+=(targetPan.y-pan.y)*k;
+ const camera=cameraOnPath(frames,progress,viewport());
+ world.style.transform=`translate(${camera.x+pan.x}px,${camera.y+pan.y}px) scale(${camera.scale})`;
+ level=Math.min(frames.length-1,Math.floor(progress+.12));
+ document.querySelector('#scene-name').textContent=frames[level].title;
+ document.querySelector('footer').hidden=progress<frames.length-1-.015;
+ requestAnimationFrame(animate);
+}
 requestAnimationFrame(animate);

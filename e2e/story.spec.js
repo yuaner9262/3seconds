@@ -22,3 +22,21 @@ test('image-only exploration, wheel, pan, reverse and final restart',async({page
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  expect(errors).toEqual([]);
 });
+
+test('wheel follows the same entrance regardless of cursor position and reverses',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
+ await page.mouse.move(30,30);await page.mouse.wheel(0,-770);await page.waitForTimeout(150);
+ const left=await page.evaluate(()=>window.narrativeControls.getState());
+ await page.evaluate(()=>window.narrativeControls.reset());await page.waitForTimeout(150);
+ await page.mouse.move(1100,650);await page.mouse.wheel(0,-770);await page.waitForTimeout(150);
+ const right=await page.evaluate(()=>window.narrativeControls.getState());
+ expect(left.camera).toEqual(right.camera);
+ await page.mouse.wheel(0,770);await page.waitForTimeout(150);
+ expect((await page.evaluate(()=>window.narrativeControls.getState())).progress).toBeCloseTo(0,6);
+ await page.mouse.wheel(0,-4000);await page.waitForTimeout(150);
+ await expect(page.locator('#reset')).toBeVisible();
+ const last=await page.evaluate(()=>window.narrativeControls.getState());
+ expect(last.progress).toBe(2);
+ await page.mouse.wheel(0,-4000);await page.waitForTimeout(150);
+ expect((await page.evaluate(()=>window.narrativeControls.getState())).camera).toEqual(last.camera);
+});
