@@ -1,0 +1,24 @@
+import { test, expect } from '@playwright/test';
+test('image-only exploration, wheel, pan, reverse and final restart',async({page})=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewportSize({width:1440,height:1000});await page.goto('/');
+ await expect(page.locator('.layer img')).toHaveCount(3);
+ expect(await page.locator('.layer img').evaluateAll(xs=>xs.every(x=>x.complete&&x.naturalWidth>0))).toBeTruthy();
+ await expect(page.locator('button:visible')).toHaveCount(0);
+ const before=await page.locator('#world').getAttribute('style');
+ await page.mouse.move(900,600);await page.mouse.wheel(0,-400);await page.waitForTimeout(500);
+ expect(await page.locator('#world').getAttribute('style')).not.toEqual(before);
+ const zoomed=await page.locator('#world').getAttribute('style');
+ await page.mouse.move(850,550);await page.mouse.down();await page.mouse.move(950,580,{steps:10});await page.mouse.up();await page.waitForTimeout(300);
+ expect(await page.locator('#world').getAttribute('style')).not.toEqual(zoomed);
+ await page.evaluate(()=>window.narrativeControls.go(1));await expect(page.locator('#scene-name')).toHaveText('倒影');
+ await expect(page.locator('button:visible')).toHaveCount(0);
+ await page.evaluate(()=>window.narrativeControls.go(2));await expect(page.locator('#scene-name')).toHaveText('目光停留处');
+ await expect(page.locator('#reset')).toBeVisible();
+ await page.keyboard.press('Backspace');await expect(page.locator('#scene-name')).toHaveText('倒影');
+ await page.evaluate(()=>window.narrativeControls.go(2));await expect(page.locator('#reset')).toBeVisible();await page.locator('#reset').click();await expect(page.locator('#scene-name')).toHaveText('隔岸');
+ await page.waitForTimeout(700);await page.screenshot({path:'/tmp/3seconds-no-text.png'});
+ await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ expect(errors).toEqual([]);
+});
