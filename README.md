@@ -33,3 +33,7 @@ npm exec playwright test
 ## 单文件预览
 
 运行 `npm run preview:file` 生成 `dist/3seconds-preview.html`。图片、样式和脚本均嵌入其中，下载后用桌面浏览器打开，无需服务端。云端受管浏览器禁止 file: 导航，因此自动验证以本地 HTTP 提供该单文件，另检查其不依赖任何外部请求。
+
+## GitHub Pages 在线预览
+
+仓库 Settings → Pages → Build and deployment → Source 选择 GitHub Actions。推送到 main 后，`.github/workflows/pages.yml` 自动测试、构建并部署。首次启用后可在 Actions 中手动运行 Deploy preview to GitHub Pages。部署成功后预期地址为 https://yuaner9262.github.io/3seconds/ ，实际发布状态以 Actions 和 Pages 设置为准。
